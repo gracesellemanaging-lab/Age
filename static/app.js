@@ -1148,9 +1148,9 @@ function updateExpressionScores(track, sorted) {
   // Ignore weak, ambiguous frames so a single unclear prediction cannot
   // change the label. Keep the first sample so a face gets an initial value.
   const topProbability = sorted[0]?.probability ?? 0;
-  if (!track.expressionHistory.length || topProbability >= 0.4) {
+  if (!track.expressionHistory.length || topProbability >= 0.45) {
     track.expressionHistory.push(incoming);
-    if (track.expressionHistory.length > 5) track.expressionHistory.shift();
+    if (track.expressionHistory.length > 6) track.expressionHistory.shift();
   }
 
   const history = track.expressionHistory;
@@ -1173,7 +1173,7 @@ function updateExpressionScores(track, sorted) {
   // flickering between two nearly tied expressions.
   if (track.expressionKey && best[0] !== track.expressionKey) {
     const current = ranked.find(([key]) => key === track.expressionKey);
-    if (current && best[1] - current[1] < 0.08) return;
+    if (current && best[1] - current[1] < 0.12) return;
   }
 
   track.expressionKey = best[0];
