@@ -1009,6 +1009,10 @@ function analysisTick() {
     && now - track.createdAt > 130
     && !track.analysisPending
     && now - track.lastAnalysisAt >= ANALYSIS_INTERVAL
+    // Skip low-quality/tiny faces to avoid unreliable estimates.
+    && track.confidence >= 0.5
+    && track.target.w >= 0.07
+    && track.target.h >= 0.07
   ));
 
   if (!candidates.length) return;
