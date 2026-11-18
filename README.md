@@ -2,7 +2,7 @@
 
 Live, private face analysis in the browser. Point a camera at one or more people and FACELENS draws a tracking box around each face, then shows an estimated age range, gender, expression, detection confidence, and a temporary Face ID.
 
-**Live demo:** <https://merjohnpagente.github.io/Age_guest/>
+**Live demo:** <https://gracesellemanaging-lab.github.io/Age/>
 
 All detection and inference run on the device. Camera frames are never uploaded.
 

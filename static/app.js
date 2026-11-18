@@ -600,10 +600,10 @@ function processDetections(result, now) {
       if (!box || box.width < 2 || box.height < 2) return null;
       const normalised = normaliseBox(box, frameWidth, frameHeight);
       if (normalised.w < 0.025 || normalised.h < 0.025) return null;
-      return {
-        box: normalised,
-        score: clamp(detection.categories?.[0]?.score ?? 0.5, 0, 1),
-      };
+      const score = clamp(detection.categories?.[0]?.score ?? 0.5, 0, 1);
+      // Ignore low-confidence detections to reduce false face boxes.
+      if (score < 0.45) return null;
+      return { box: normalised, score };
     })
     .filter(Boolean);
 
@@ -846,7 +846,7 @@ function projectBox(box) {
 }
 
 function renderTracks(now, dt) {
-  const smoothing = 1 - Math.exp(-dt * 15.5);
+  const smoothing = 1 - Math.exp(-dt * 12.0);
   const visible = [];
   const removals = [];
 
@@ -1085,7 +1085,7 @@ async function analyseTrack(track) {
       // short history and smooth the median so one bad frame cannot swing the
       // displayed estimate, while still adapting to real changes.
       track.ageHistory.push(age);
-      if (track.ageHistory.length > 7) track.ageHistory.shift();
+      if (track.ageHistory.length > 9) track.ageHistory.shift();
       const medianAge = median(track.ageHistory);
       if (medianAge !== null) {
         track.ageSmoothed = track.ageSmoothed === null
@@ -1096,7 +1096,7 @@ async function analyseTrack(track) {
 
     if (maleProbability !== null) {
       if (track.maleProbability === null) track.maleProbability = maleProbability;
-      else track.maleProbability = track.maleProbability * 0.58 + maleProbability * 0.42;
+      else track.maleProbability = track.maleProbability * 0.62 + maleProbability * 0.38;
       track.gender = track.maleProbability >= 0.5 ? 'Man' : 'Woman';
     }
 
@@ -1148,7 +1148,7 @@ function updateExpressionScores(track, sorted) {
   // Ignore weak, ambiguous frames so a single unclear prediction cannot
   // change the label. Keep the first sample so a face gets an initial value.
   const topProbability = sorted[0]?.probability ?? 0;
-  if (!track.expressionHistory.length || topProbability >= 0.35) {
+  if (!track.expressionHistory.length || topProbability >= 0.4) {
     track.expressionHistory.push(incoming);
     if (track.expressionHistory.length > 5) track.expressionHistory.shift();
   }
