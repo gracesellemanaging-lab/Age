@@ -436,7 +436,7 @@ async function initialiseDetector() {
         delegate,
       },
       runningMode: 'VIDEO',
-      minDetectionConfidence: 0.48,
+      minDetectionConfidence: 0.5,
       minSuppressionThreshold: 0.3,
     });
 
@@ -1085,18 +1085,18 @@ async function analyseTrack(track) {
       // short history and smooth the median so one bad frame cannot swing the
       // displayed estimate, while still adapting to real changes.
       track.ageHistory.push(age);
-      if (track.ageHistory.length > 9) track.ageHistory.shift();
+      if (track.ageHistory.length > 12) track.ageHistory.shift();
       const medianAge = median(track.ageHistory);
       if (medianAge !== null) {
         track.ageSmoothed = track.ageSmoothed === null
           ? medianAge
-          : track.ageSmoothed * 0.55 + medianAge * 0.45;
+          : track.ageSmoothed * 0.6 + medianAge * 0.4;
       }
     }
 
     if (maleProbability !== null) {
       if (track.maleProbability === null) track.maleProbability = maleProbability;
-      else track.maleProbability = track.maleProbability * 0.62 + maleProbability * 0.38;
+      else track.maleProbability = track.maleProbability * 0.68 + maleProbability * 0.32;
       track.gender = track.maleProbability >= 0.5 ? 'Man' : 'Woman';
     }
 
@@ -1150,7 +1150,7 @@ function updateExpressionScores(track, sorted) {
   const topProbability = sorted[0]?.probability ?? 0;
   if (!track.expressionHistory.length || topProbability >= 0.45) {
     track.expressionHistory.push(incoming);
-    if (track.expressionHistory.length > 6) track.expressionHistory.shift();
+    if (track.expressionHistory.length > 8) track.expressionHistory.shift();
   }
 
   const history = track.expressionHistory;
@@ -1173,7 +1173,7 @@ function updateExpressionScores(track, sorted) {
   // flickering between two nearly tied expressions.
   if (track.expressionKey && best[0] !== track.expressionKey) {
     const current = ranked.find(([key]) => key === track.expressionKey);
-    if (current && best[1] - current[1] < 0.12) return;
+    if (current && best[1] - current[1] < 0.15) return;
   }
 
   track.expressionKey = best[0];
@@ -1252,7 +1252,7 @@ function makeFaceCrop(box) {
   const centreY = (box.y + box.h / 2) * videoHeight;
   const faceWidth = box.w * videoWidth;
   const faceHeight = box.h * videoHeight;
-  const side = clamp(Math.max(faceWidth, faceHeight) * 1.34, 60, Math.min(videoWidth, videoHeight));
+  const side = clamp(Math.max(faceWidth, faceHeight) * 1.45, 64, Math.min(videoWidth, videoHeight));
 
   const sourceX = clamp(centreX - side / 2, 0, Math.max(0, videoWidth - side));
   const sourceY = clamp(centreY - side / 2, 0, Math.max(0, videoHeight - side));
