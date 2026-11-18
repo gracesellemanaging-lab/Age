@@ -603,7 +603,21 @@ function processDetections(result, now) {
       const score = clamp(detection.categories?.[0]?.score ?? 0.5, 0, 1);
       // Ignore low-confidence detections to reduce false face boxes.
       if (score < 0.45) return null;
-      return { box: normalised, score };
+
+      // Keep keypoints (if provided) for better crop alignment.
+      const keypoints = Array.isArray(detection.keypoints)
+        ? detection.keypoints.map((kp) => {
+            const x = typeof kp?.x === 'number' ? kp.x : kp?.location?.x;
+            const y = typeof kp?.y === 'number' ? kp.y : kp?.location?.y;
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+            return {
+              x: x > 1.5 ? x / frameWidth : x,
+              y: y > 1.5 ? y / frameHeight : y,
+            };
+          }).filter(Boolean)
+        : null;
+
+      return { box: normalised, score, keypoints };
     })
     .filter(Boolean);
 
@@ -652,6 +666,7 @@ function processDetections(result, now) {
     usedTracks.add(pair.trackIndex);
 
     track.target = detection.box;
+    track.keypoints = detection.keypoints || track.keypoints;
     track.lastSeen = now;
     track.misses = 0;
     track.detectionCount += 1;
@@ -730,6 +745,7 @@ function createTrack(detection, now, rememberedId = null) {
     elements,
     target: { ...detection.box },
     current: { ...detection.box },
+    keypoints: detection.keypoints ? [...detection.keypoints] : null,
     lastSeen: now,
     createdAt: now,
     confidence: detection.score,
@@ -1024,7 +1040,7 @@ function analysisTick() {
 async function analyseTrack(track) {
   if (APP.analysisBusy || !APP.cameraOn) return;
 
-  const crop = makeFaceCrop(track.target);
+  const crop = makeFaceCrop(track.target, track.keypoints);
   if (!crop) return;
 
   const generation = APP.cameraGeneration;
@@ -1101,7 +1117,9 @@ async function analyseTrack(track) {
     if (maleProbability !== null) {
       if (track.maleProbability === null) track.maleProbability = maleProbability;
       else track.maleProbability = track.maleProbability * 0.68 + maleProbability * 0.32;
-      track.gender = track.maleProbability >= 0.5 ? 'Man' : 'Woman';
+      if (track.maleProbability >= 0.6) track.gender = 'Man';
+      else if (track.maleProbability <= 0.4) track.gender = 'Woman';
+      else track.gender = 'Uncertain';
     }
 
     if (expressionScores) {
@@ -1180,6 +1198,11 @@ function updateExpressionScores(track, sorted) {
     if (current && best[1] - current[1] < 0.15) return;
   }
 
+  // Mark low-confidence averages as uncertain instead of forcing a label.
+  if (best[1] < 0.35) {
+    track.expression = 'Uncertain';
+    return;
+  }
   track.expressionKey = best[0];
   track.expression = EXPRESSION_LABELS[best[0]] || 'Uncertain';
 }
@@ -1247,16 +1270,36 @@ function formatAgeRange(age) {
   return `${lower}–${upper}`;
 }
 
-function makeFaceCrop(box) {
+function makeFaceCrop(box, keypoints = null) {
   const videoWidth = el.video.videoWidth;
   const videoHeight = el.video.videoHeight;
   if (!videoWidth || !videoHeight) return null;
 
-  const centreX = (box.x + box.w / 2) * videoWidth;
-  const centreY = (box.y + box.h / 2) * videoHeight;
-  const faceWidth = box.w * videoWidth;
-  const faceHeight = box.h * videoHeight;
-  const side = clamp(Math.max(faceWidth, faceHeight) * 1.45, 64, Math.min(videoWidth, videoHeight));
+  // Prefer keypoint-derived centre/scale when available for better alignment.
+  let centreX = (box.x + box.w / 2) * videoWidth;
+  let centreY = (box.y + box.h / 2) * videoHeight;
+  let faceWidth = box.w * videoWidth;
+  let faceHeight = box.h * videoHeight;
+  let rotation = 0;
+
+  if (Array.isArray(keypoints) && keypoints.length >= 2) {
+    const kp = keypoints.map((p) => ({
+      x: (typeof p.x === 'number' ? p.x : 0) * videoWidth,
+      y: (typeof p.y === 'number' ? p.y : 0) * videoHeight,
+    }));
+    // Use first two keypoints as eye line when plausible.
+    const dx = kp[1].x - kp[0].x;
+    const dy = kp[1].y - kp[0].y;
+    const eyeDistance = Math.hypot(dx, dy);
+    if (eyeDistance > 8) {
+      centreX = (kp[0].x + kp[1].x) / 2;
+      centreY = (kp[0].y + kp[1].y) / 2 + eyeDistance * 0.15;
+      faceWidth = faceHeight = eyeDistance * 2.6;
+      rotation = Math.atan2(dy, dx);
+    }
+  }
+
+  const side = clamp(Math.max(faceWidth, faceHeight) * 1.34, 64, Math.min(videoWidth, videoHeight));
 
   const sourceX = clamp(centreX - side / 2, 0, Math.max(0, videoWidth - side));
   const sourceY = clamp(centreY - side / 2, 0, Math.max(0, videoHeight - side));
@@ -1266,7 +1309,14 @@ function makeFaceCrop(box) {
   canvas.height = 224;
   const context = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
   if (!context) return null;
-  context.drawImage(el.video, sourceX, sourceY, side, side, 0, 0, canvas.width, canvas.height);
+
+  if (rotation) {
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate(rotation);
+    context.drawImage(el.video, sourceX, sourceY, side, side, -canvas.width / 2, -canvas.height / 2, canvas.width, canvas.height);
+  } else {
+    context.drawImage(el.video, sourceX, sourceY, side, side, 0, 0, canvas.width, canvas.height);
+  }
   return canvas;
 }
 
